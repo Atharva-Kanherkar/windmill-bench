@@ -1,0 +1,47 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node / Bun
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+bun.lockb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Docker / Postgres volumes
+data/
+postgres-data/
+windmill-data/
+
+# E2B build artifacts
+.e2b/
+
+# Logs
+*.log
+logs/
+
+# Local scratch — review-checkpoint files live in /tmp, but guard against accidents
+testing/
+reviewcheckpoint.json
