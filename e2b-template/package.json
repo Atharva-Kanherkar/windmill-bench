@@ -5,6 +5,7 @@
     "build:dev": "tsx build.dev.ts",
     "build:prod": "tsx build.prod.ts",
     "typecheck": "tsc --noEmit",
+    "shellcheck": "shellcheck boot.sh",
     "probe:snapshot:build": "tsx probes/snapshot-state/build.ts",
     "probe:snapshot:run": "tsx probes/snapshot-state/run.ts"
   },
