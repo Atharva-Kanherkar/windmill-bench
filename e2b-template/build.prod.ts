@@ -4,6 +4,10 @@ import { template } from './template'
 async function main() {
   await Template.build(template, 'windmill-bench-prod', {
     onBuildLogs: defaultBuildLogger(),
+    // Same resource footprint as dev: Postgres + Windmill standalone plus
+    // migration apply at template-build time needs ~2 GiB to avoid OOM.
+    cpuCount: 2,
+    memoryMB: 2048,
   })
 }
 
