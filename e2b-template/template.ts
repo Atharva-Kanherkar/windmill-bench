@@ -1,5 +1,13 @@
 import { Template } from 'e2b'
 
+// Pinned Windmill release. Bump in a dedicated commit when upgrading; both
+// the URL and the SHA256 must be updated together. SHA256 is verified at
+// template-build time against the downloaded binary; mismatch fails the
+// build so we catch supply-chain compromise or accidental upstream rebuild.
+const WMILL_VERSION = 'v1.699.0'
+const WMILL_BINARY_URL = `https://github.com/windmill-labs/windmill/releases/download/${WMILL_VERSION}/windmill-amd64`
+const WMILL_BINARY_SHA256 = '8f89894f171879fad6a2e5d40fee0e3487a3f111c0020d8747735d6cf14b03e9'
+
 // Base template for windmill-bench sandboxes.
 //
 // Architecture: Windmill runs as a *binary* alongside a local Postgres inside
@@ -58,12 +66,32 @@ export const template = Template()
   // template-build time, not at sandbox-boot time.
   .runCmd('npm install -g windmill-cli && wmill --version')
 
+  // Windmill server binary. Pinned by version + SHA256. Steps:
+  //   1. Download to /tmp.
+  //   2. Verify SHA256 — fails the whole .runCmd on mismatch.
+  //   3. Atomically install into /usr/local/bin with mode 0755.
+  //   4. Sanity-check the installed file is a Linux x86-64 ELF binary
+  //      (cheap probe; doesn't try to invoke `windmill --help` because the
+  //      binary may attempt to read DATABASE_URL even for --help and we
+  //      don't want a build-time failure for that reason).
+  .runCmd(
+    `curl -fsSL ${WMILL_BINARY_URL} -o /tmp/windmill.bin ` +
+      `&& echo "${WMILL_BINARY_SHA256}  /tmp/windmill.bin" | sha256sum -c - ` +
+      `&& install -m 0755 /tmp/windmill.bin /usr/local/bin/windmill ` +
+      `&& rm -f /tmp/windmill.bin ` +
+      `&& file /usr/local/bin/windmill | grep -q "ELF 64-bit"`,
+  )
+
   // Workspace is where benchmark runs do their work — mirrors the convention
   // AgentClash already uses inside its sandboxes. Subsequent PRs copy the
   // hub snapshot, workspace seed, and boot script into here.
   .runCmd('mkdir -p /workspace')
   .setWorkdir('/workspace')
 
-  // Placeholder start command. PR 3 replaces this with a call to boot.sh
-  // that brings Windmill + Postgres up and signals READY on stdout.
+  // Placeholder start command. A later PR replaces this with a call to
+  // boot.sh that starts Postgres + the Windmill binary in MODE=standalone,
+  // then waits on `waitForURL('http://localhost:8000/api/version')` for
+  // readiness. Keeping the placeholder so this template is buildable today
+  // and the binary install in this PR can be verified by spawning a sandbox
+  // and exec-ing into it.
   .setStartCmd('sleep infinity', 'sleep 5')
