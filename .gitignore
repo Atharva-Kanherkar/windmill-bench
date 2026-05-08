@@ -30,10 +30,11 @@ __pycache__/
 venv/
 .pytest_cache/
 
-# Docker / Postgres volumes
-data/
-postgres-data/
-windmill-data/
+# Docker / Postgres volumes — root-scoped so future paths like
+# tasks/<key>/data/ aren't accidentally swallowed
+/data/
+/postgres-data/
+/windmill-data/
 
 # E2B build artifacts
 .e2b/
