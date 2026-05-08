@@ -57,7 +57,12 @@ async function main() {
         break
     }
 
-    process.exit(verdict === 'PROBE_BROKEN' ? 1 : 0)
+    // Set exit code rather than calling process.exit(): process.exit()
+    // terminates the runtime synchronously and skips the `finally` block,
+    // which would orphan the sandbox. Returning normally lets the finally
+    // run sandbox.kill() before Node drains the event loop and exits with
+    // the code we set here.
+    process.exitCode = verdict === 'PROBE_BROKEN' ? 1 : 0
   } finally {
     await sandbox.kill()
   }
@@ -65,5 +70,9 @@ async function main() {
 
 main().catch((err) => {
   console.error(err)
+  // Safe to use process.exit here: this catch only runs if main()'s promise
+  // rejected, which means the try/finally inside main has already settled
+  // (the finally block awaits sandbox.kill before propagating). At this
+  // point the sandbox is already torn down.
   process.exit(1)
 })
