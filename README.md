@@ -6,8 +6,9 @@
 
 ## What this is
 
-A challenge pack that evaluates how well AI agents (Claude, GPT, Gemini, open-weights)
-generate Windmill flows from natural-language specifications.
+A challenge pack that evaluates how well AI agents — frontier hosted models and
+open-weights models alike — generate Windmill flows from natural-language
+specifications.
 
 Generated flows are graded by **actually executing them inside a sandboxed Windmill
 instance** and comparing the runtime output against a reference oracle — not by
