@@ -1,10 +1,13 @@
 import { Template } from 'e2b'
 
-// Pinned Windmill release. Bump in a dedicated commit when upgrading; both
-// the URL and the SHA256 must be updated together. SHA256 is verified at
-// template-build time against the downloaded binary; mismatch fails the
-// build so we catch supply-chain compromise or accidental upstream rebuild.
+// Pinned Windmill release. Bump in a dedicated commit when upgrading;
+// the URL, the SHA256, and the matching wmill CLI npm version must all
+// be updated together. SHA256 is verified at template-build time against
+// the downloaded binary; mismatch fails the build so we catch supply-chain
+// compromise or accidental upstream rebuild. The CLI npm package tracks
+// the same version stream as the server binary.
 const WMILL_VERSION = 'v1.699.0'
+const WMILL_NPM_VERSION = '1.699.0' // wmill-cli on npm uses no leading 'v'
 const WMILL_BINARY_URL = `https://github.com/windmill-labs/windmill/releases/download/${WMILL_VERSION}/windmill-amd64`
 const WMILL_BINARY_SHA256 = '8f89894f171879fad6a2e5d40fee0e3487a3f111c0020d8747735d6cf14b03e9'
 
@@ -64,10 +67,12 @@ export const template = Template()
       '&& rm -rf /var/lib/apt/lists/*',
   )
 
-  // wmill CLI from npm. The build fails loudly if the install or version
-  // probe fails — catches broken upstream releases or network issues at
-  // template-build time, not at sandbox-boot time.
-  .runCmd('npm install -g windmill-cli && wmill --version')
+  // wmill CLI from npm, pinned to the exact version that matches the server
+  // binary. Without an explicit version, `npm install -g windmill-cli` would
+  // pull whatever `latest` is at build time, drifting away from the pinned
+  // server binary across rebuilds — bad for benchmark reproducibility. The
+  // trailing version probe still fails the build loudly on broken installs.
+  .runCmd(`npm install -g windmill-cli@${WMILL_NPM_VERSION} && wmill --version`)
 
   // Windmill server binary. Pinned by version + SHA256. Steps:
   //   1. Download to /tmp.
