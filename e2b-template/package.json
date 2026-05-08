@@ -1,0 +1,12 @@
+{
+  "name": "windmill-bench-e2b-template",
+  "private": true,
+  "scripts": {
+    "build:dev": "tsx build.dev.ts",
+    "build:prod": "tsx build.prod.ts"
+  },
+  "dependencies": {
+    "e2b": "^2.14.1",
+    "tsx": "^4.21.0"
+  }
+}
