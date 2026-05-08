@@ -38,7 +38,23 @@ files via `sandbox.commands.run('cat ...')`.
 
 ## Result
 
-_Awaiting first run. Will be updated with the verdict + the timestamps observed._
+**Verdict:** `START_PERSISTED` — observed 2026-05-09 against E2B SDK 2.14.x.
+
+Both writes were preserved in the spawned sandbox:
+
+```
+build-time write present: ✓  2026-05-08T20:52:53Z   (.runCmd phase)
+start-time write present: ✓  2026-05-08T20:53:04Z   (setStartCmd phase, before ready marker)
+```
+
+Implication: the main `e2b-template/template.ts` can run the Windmill binary
+once at template-build time so all Postgres migrations apply before E2B
+takes the snapshot. Sandboxes spawned from that template restore with
+Windmill already running on a migrated DB → ~3s cold-start.
+
+This is what PR 5 is being built against. If E2B changes its snapshot
+semantics in the future, re-run the probe and update this section before
+trusting the optimization.
 
 ## Re-running
 
