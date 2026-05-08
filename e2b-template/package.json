@@ -3,10 +3,15 @@
   "private": true,
   "scripts": {
     "build:dev": "tsx build.dev.ts",
-    "build:prod": "tsx build.prod.ts"
+    "build:prod": "tsx build.prod.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "e2b": "^2.14.1",
     "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
   }
 }
