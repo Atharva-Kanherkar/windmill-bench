@@ -42,6 +42,22 @@ export const template = Template()
       '&& rm -rf /var/lib/apt/lists/*',
   )
 
+  // Node 20 via the official NodeSource apt repo. Needed for the wmill CLI
+  // (distributed only via npm; no standalone single-file binary). We pin to
+  // major version 20 LTS — same as AgentClash's template — which matches
+  // what windmill-cli's package.json expects and avoids surprise updates
+  // from the NodeSource setup script.
+  .runCmd(
+    'curl -fsSL https://deb.nodesource.com/setup_20.x | bash - ' +
+      '&& apt-get install -y --no-install-recommends nodejs ' +
+      '&& rm -rf /var/lib/apt/lists/*',
+  )
+
+  // wmill CLI from npm. The build fails loudly if the install or version
+  // probe fails — catches broken upstream releases or network issues at
+  // template-build time, not at sandbox-boot time.
+  .runCmd('npm install -g windmill-cli && wmill --version')
+
   // Workspace is where benchmark runs do their work — mirrors the convention
   // AgentClash already uses inside its sandboxes. Subsequent PRs copy the
   // hub snapshot, workspace seed, and boot script into here.
