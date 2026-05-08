@@ -45,24 +45,53 @@ The two key Windmill env-var defaults we rely on:
   `Template.build(template, name, opts)` with the dev/prod template names.
 - `tsconfig.json` — TS config scoped to the three authored files; strict
   mode, NodeNext modules, ES2022 target.
-- `boot.sh` _(added in a later PR)_ — runs on sandbox start. Initializes
-  the Postgres data dir if needed, starts Postgres, runs the Windmill
-  binary in `MODE=standalone`, polls `/api/version`, and signals readiness
-  via the `setStartCmd` ready check.
+- `boot.sh` — runs once at template build via `setStartCmd`. Initializes
+  the Postgres data dir, starts Postgres, creates the `windmill` database,
+  sets the postgres password, and execs Windmill in `MODE=standalone`.
+  Windmill auto-runs migrations on first connection. The
+  `waitForURL('http://localhost:8000/api/version')` ready check blocks
+  E2B's snapshot until Windmill is healthy.
 
-## What's in this PR (`feat/install-windmill-deps`)
+## Boot sequence
 
-Just the runtime dependencies, baked into the image at build time:
+`boot.sh` runs **once at template-build time** (not at sandbox spawn).
+The snapshot-state probe (`probes/snapshot-state/`, verdict
+`START_PERSISTED`) confirmed E2B's snapshot captures both process state
+and filesystem state — so when sandboxes spawn, Postgres is already
+running and Windmill is already serving on the migrated DB. **Cold-start
+~3 seconds.**
 
-- PostgreSQL 16 via apt
-- Node.js 20 via NodeSource (needed for the wmill CLI)
-- `windmill-cli` via `npm install -g`
-- The Windmill server binary v1.699.0, pinned by URL **and SHA256**, fetched
-  from the GitHub release
+What the script does, in order:
 
-No boot script in this PR. Nothing actually runs yet — the sandbox just has
-the bits available. Boot orchestration lands in a later PR (see comment block
-at the top of `template.ts`).
+1. Truncates `/var/log/windmill.log` for fresh build-time logs.
+2. Initializes the postgresql-16 cluster (`pg_createcluster 16 main`) if
+   the data dir is empty.
+3. Starts the cluster (`pg_ctlcluster 16 main start`). systemd is not
+   present in the sandbox.
+4. Polls `pg_isready` for up to ~15 seconds.
+5. Sets the `postgres` user password to `changeme` and creates the
+   `windmill` database (idempotent via `\gexec`). Uses `runuser -u postgres`
+   — `sudo` is not in the image.
+6. Exports Windmill env: `DATABASE_URL`, `MODE=standalone`, `PORT=8000`,
+   `BASE_URL`, `NUM_WORKERS=1`, `DISABLE_NSJAIL=true`, `RUST_LOG=info`,
+   `JSON_FMT=true`.
+7. Launches `/usr/local/bin/windmill` in the background, output teed to
+   the log file and stdout. Windmill applies all Postgres migrations on
+   its first connection.
+8. `wait`. Keeps the start-command process alive so E2B's snapshot
+   captures Windmill as a live process.
+
+## Default credentials inside the running Windmill
+
+Seeded by Windmill's own first migration (not configured by us):
+
+```
+email:    admin@windmill.dev
+password: changeme
+```
+
+These are the credentials a benchmark runner uses to obtain a bearer token
+via `POST /api/auth/login` once a sandbox is spawned.
 
 ## Building
 
@@ -80,14 +109,43 @@ under `version.sandbox.sandbox_template_id`.
 
 ## Reliability principles
 
-- **Pin every version.** Postgres 16 (apt), Node 20 (NodeSource), Windmill
-  v1.699.0 (URL + SHA256 verified at build time). No `:latest`. SHA256 of
-  the Windmill binary is checked before install — mismatch fails the build.
-- **Frozen Hub snapshot** _(arrives later)_ lives in `../fixtures/hub-snapshot.json`
-  and is baked into the image during build, never fetched at runtime.
-- **Idempotent boot** _(arrives later)_. The boot script must be safe to
-  re-run inside an already-bootstrapped sandbox. Distinct subcommands for
-  fresh-start vs reuse rather than blanket truncation.
-- **Health-check before signaling.** The boot script polls
-  `http://localhost:8000/api/version` (Windmill's official healthcheck endpoint)
-  before signaling ready. Same endpoint Windmill's own GitHub Actions use.
+- **Pin every version.** Postgres 16 (apt), Node 20 (NodeSource),
+  windmill-cli (npm `1.699.0`), Windmill server binary (`v1.699.0`,
+  SHA256-verified at build time). No `:latest`. Mismatch on the binary
+  hash fails the build.
+- **Frozen Hub snapshot** _(arrives in a later PR)_ lives in
+  `../fixtures/hub-snapshot.json` and is baked into the image during
+  build, never fetched at runtime.
+- **Idempotent boot.** The cluster init and database creation in `boot.sh`
+  are guarded so a second run is a no-op (defense in depth — the script is
+  expected to run only once per template build).
+- **Health-check via the official endpoint.** `setStartCmd`'s ready check
+  is `waitForURL('http://localhost:8000/api/version')`, the same endpoint
+  Windmill's own GitHub Actions use. Windmill does not open the API port
+  until migrations have applied and server + worker + embedded frontend
+  are all up.
+
+## Verifying a built template
+
+```bash
+# Build (one-off, after editing template.ts or boot.sh)
+npm run build:dev
+
+# Smoke-check a spawned sandbox
+node -e "
+  const { Sandbox } = require('e2b');
+  Sandbox.create('windmill-bench-dev').then(async s => {
+    const r = await s.commands.run('curl -fs http://localhost:8000/api/version');
+    console.log(r.stdout);
+    await s.kill();
+  });
+"
+# Expect: a version JSON within ~3 seconds of spawn.
+```
+
+Static checks (run before pushing template changes):
+
+```bash
+npm run typecheck   # template.ts, build.{dev,prod}.ts, probes/**
+npm run shellcheck  # boot.sh
+```
