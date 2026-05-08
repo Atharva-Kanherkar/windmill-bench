@@ -1,4 +1,4 @@
-import { Template } from 'e2b'
+import { Template, waitForURL } from 'e2b'
 
 // Pinned Windmill release. Bump in a dedicated commit when upgrading;
 // the URL, the SHA256, and the matching wmill CLI npm version must all
@@ -92,14 +92,29 @@ export const template = Template()
 
   // Workspace is where benchmark runs do their work — mirrors the convention
   // AgentClash already uses inside its sandboxes. Subsequent PRs copy the
-  // hub snapshot, workspace seed, and boot script into here.
+  // hub snapshot and workspace seed into here.
   .runCmd('mkdir -p /workspace')
   .setWorkdir('/workspace')
 
-  // Placeholder start command. A later PR replaces this with a call to
-  // boot.sh that starts Postgres + the Windmill binary in MODE=standalone,
-  // then waits on `waitForURL('http://localhost:8000/api/version')` for
-  // readiness. Keeping the placeholder so this template is buildable today
-  // and the binary install in this PR can be verified by spawning a sandbox
-  // and exec-ing into it.
-  .setStartCmd('sleep infinity', 'sleep 5')
+  // Boot script. Lives at /usr/local/bin/boot.sh, mode 0755, owned root.
+  // The script itself documents what it does and why; see e2b-template/boot.sh.
+  .copy('boot.sh', '/usr/local/bin/boot.sh', { user: 'root', mode: 0o755 })
+
+  // Start command + readiness gate.
+  //
+  //   The start command runs ONCE during Template.build(); E2B then waits for
+  //   the readiness check to succeed before snapshotting the live VM. Per the
+  //   snapshot-state probe (probes/snapshot-state/), the snapshot captures
+  //   both process state AND filesystem state, so spawned sandboxes restore
+  //   with Postgres running, Windmill running, and migrations already applied.
+  //
+  //   waitForURL polls Windmill's official healthcheck endpoint
+  //   (http://localhost:8000/api/version, the same one Windmill's own GitHub
+  //   Actions use) until it returns 200. Windmill won't open the API port
+  //   until the embedded SvelteKit frontend, the Axum router, and the worker
+  //   thread are all up — by the time waitForURL succeeds, the system is
+  //   genuinely ready.
+  .setStartCmd(
+    '/usr/local/bin/boot.sh',
+    waitForURL('http://localhost:8000/api/version'),
+  )
