@@ -19,17 +19,21 @@ static analysis or LLM-judge alone.
 Existing public benchmarks for code-generating agents either:
 
 - Test single-function generation (HumanEval, BigCodeBench, LiveCodeBench), or
-- Test agent task-completion in environments (AppWorld, τ-bench), or
-- Test workflow generation as abstract DAGs without a real execution target
-  (WorFBench, AFLOW), or
-- Test DAG generation against static analyzers, not execution (Prompt2DAG, dbt
-  semantic-layer benchmarks).
+- Test agent task-completion in API/UI environments (AppWorld, τ-bench), or
+- Generate operator graphs or workflow plans and evaluate them on downstream
+  task benchmarks rather than against a workflow engine (WorFBench, AFLOW —
+  the latter uses execution feedback over operator graphs, but the execution
+  target is task suites like HumanEval/GSM8K, not a workflow runtime), or
+- Generate workflow artifacts for a runtime (Airflow DAGs in Prompt2DAG) and
+  grade with a mix of static checks and isolated execution against a stub
+  scheduler.
 
-None of them generate artifacts for a **real, open-source, executable production
-workflow engine** and grade by **running the generated artifact**. Windmill is the
-right reference engine because it's open-source, covers scripts + flows + apps
-under one runtime, and exposes a programmatic surface (the `wmill` CLI) clean
-enough to drive a benchmark harness against.
+None of them grade generated workflows by running them inside a **real,
+open-source, production workflow engine** — with workspace state, typed
+resources, secret management, a hub of third-party modules, and multi-language
+script execution all in play. Windmill is the right reference engine because
+it's open-source, exposes that full surface (workspace, resources, hub, the
+`wmill` CLI), and covers scripts + flows + apps under one runtime.
 
 ## Scope (v1)
 
