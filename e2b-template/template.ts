@@ -32,10 +32,13 @@ export const template = Template()
   .setWorkdir('/')
 
   // Shell + transport essentials. Single apt-get block to keep image layers
-  // tight. Lists are cleaned up so they don't bloat the snapshot.
+  // tight. Lists are cleaned up so they don't bloat the snapshot. `file` is
+  // included because the Windmill binary install verifies the result with
+  // `file /usr/local/bin/windmill | grep -q "ELF 64-bit"`, and ubuntu:24.04
+  // does not ship `file`/libmagic1 in its base layer.
   .runCmd(
     'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ' +
-      'bash ca-certificates coreutils curl wget git jq ' +
+      'bash ca-certificates coreutils curl wget git jq file ' +
       'gnupg software-properties-common ' +
       '&& rm -rf /var/lib/apt/lists/*',
   )
