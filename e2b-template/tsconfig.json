@@ -10,5 +10,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["template.ts", "build.dev.ts", "build.prod.ts"]
+  "include": ["template.ts", "build.dev.ts", "build.prod.ts", "probes/**/*.ts"]
 }
