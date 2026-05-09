@@ -12,11 +12,13 @@ import { readFileSync } from 'node:fs'
 //   2. POSITIVE: hand-deploy a correct sum flow at u/admin/submission
 //      and re-run wb-verify. Expect {passed:5, failed:0}.
 //
-//   3. WRONG: overwrite the flow at u/admin/submission with one that
-//      returns the constant 0 instead of a+b. Re-run wb-verify. Expect
-//      {passed:1, failed:4} — the zero+zero case incidentally passes,
-//      proving the verifier doesn't false-pass when the flow happens
-//      to match for some cases but not all.
+//   3. WRONG: deploy an always-zero flow at u/admin/submission_wrong
+//      (a separate path -- POST /flows/update/{path} on v1.699.0 does
+//      not actually replace the deployed module value, so a fresh path
+//      keeps the test isolated from that bug). Run wb-verify against
+//      the wrong path. Cases are designed so no expected is 0,
+//      so the always-zero flow fails ALL cases cleanly:
+//      {passed:0, failed:5, every case status='mismatch'}.
 //
 // The hand-deployed flows are deployed via Windmill's HTTP API directly
 // from this script (not via wmill CLI), since the agent's deployment

@@ -35,7 +35,7 @@
 // dependence on snapshot-baked credentials.
 
 import { readFileSync } from 'node:fs'
-import { argv, exit, stdout } from 'node:process'
+import { argv, stdout } from 'node:process'
 
 const WORKSPACE = 'admins'
 const ADMIN_EMAIL = 'admin@windmill.dev'
@@ -55,11 +55,16 @@ function parseArgs(args) {
 }
 
 function emit(summary) {
-  // Single line of JSON to stdout, no trailing newline noise that
-  // the validator's strict json.Unmarshal would still accept (it
-  // trims whitespace). No stderr.
+  // Single line of JSON to stdout, no stderr. We let the runtime drain
+  // stdout naturally on event-loop exit instead of calling exit(0)
+  // immediately after stdout.write -- on a TTY/pipe with a slow
+  // consumer Node can truncate the buffered write when the process
+  // exits inline. Returning lets the caller's main() path complete
+  // and the implicit exit happens after stdout is flushed. The
+  // exitCode is set so verifier-level fatals still produce exit 0
+  // (the parser scores from the JSON, not the exit code).
   stdout.write(JSON.stringify(summary) + '\n')
-  exit(0)
+  process.exitCode = 0
 }
 
 function fatal(passed, failed, detail) {
@@ -135,19 +140,37 @@ async function runOneCase(token, flowPath, inputs) {
 
 // Result equality. Numeric coercion is allowed in exactly one
 // direction: when expected is a number and got is a string that
-// parses as that exact number, treat them as equal. This is
-// necessary because Windmill's bash language returns the last line
-// of stdout *as a string*, so a correct `echo $((a+b))` returns
-// "5" while expected is 5. Other languages (python, nativets, deno)
-// return native types and don't need this. We coerce only this one
-// pair (number expected / string got) and only when Number(got)
-// is exactly equal -- no float tolerance, no whitespace tricks.
-// Arrays and objects are compared via JSON.stringify so structural
-// equality works without type-by-type traversal.
+// is the *canonical* representation of that exact number, treat
+// them as equal. This is necessary because Windmill's bash language
+// returns the last line of stdout as a string, so a correct
+// `echo $((a+b))` returns "5" while expected is 5. Other languages
+// (python, nativets, deno) return native types and don't need this.
+//
+// "Canonical" means the string round-trips through Number unchanged:
+// String(Number(got)) === got. That single check rejects every
+// non-canonical form Number() would otherwise be lenient about:
+//
+//   " 5", "5 ", "5\n", "\t5"   -- whitespace padding
+//   "05", "+5"                  -- non-canonical sign/leading zero
+//   "5e0", "5E0", "0x5", "0b101" -- alternate notations
+//   "5.0", "5."                 -- non-canonical decimal forms
+//   "-0"                        -- String(-0) === "0", so rejected
+//
+// Numeric equality must also hold (Number.isNaN guard + ===); the
+// round-trip is a necessary but not sufficient check, since e.g.
+// "1e21" would round-trip but is unlikely to ever match a benchmark
+// expected. Arrays and objects fall through to JSON.stringify
+// structural compare.
 function resultMatches(got, expected) {
   if (typeof expected === 'number' && typeof got === 'string') {
     const coerced = Number(got)
-    if (!Number.isNaN(coerced) && coerced === expected) return true
+    if (
+      !Number.isNaN(coerced) &&
+      coerced === expected &&
+      String(coerced) === got
+    ) {
+      return true
+    }
   }
   return JSON.stringify(got) === JSON.stringify(expected)
 }
