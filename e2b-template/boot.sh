@@ -34,6 +34,19 @@ if [ ! -f "$PG_DATA/PG_VERSION" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 2a. Ensure the unix-socket directory exists with correct ownership.
+#     postgresql-common's postinst normally creates /var/run/postgresql,
+#     but /var/run is a tmpfs in many container-like environments and the
+#     directory can vanish between layers / between snapshot restores.
+#     Postgres needs this for its default unix socket; failing to find it
+#     produces a confusing "directory does not exist" error half-way
+#     through startup. Idempotent — safe to run on every boot.
+# ---------------------------------------------------------------------------
+mkdir -p /var/run/postgresql
+chown postgres:postgres /var/run/postgresql
+chmod 2775 /var/run/postgresql
+
+# ---------------------------------------------------------------------------
 # 2. Start the cluster.
 #
 #    --skip-systemctl-redirect is REQUIRED here. Debian/Ubuntu's
