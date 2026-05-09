@@ -31,26 +31,29 @@ npm install
 npm run walking-skeleton:run
 ```
 
-Expected output:
+Expected output (measured 2026-05-09, first live run against
+`windmill-bench-dev`):
 
 ```text
 spawning sandbox from "windmill-bench-dev"...
-  enqueued job:           <uuid>
+  enqueued job:           019e0bec-ba68-1993-b746-7cd51ffeee5a
   asserted result:        "hello-from-windmill"
 
-  spawn_latency_ms          ~1300
-  api_ready_latency_ms      ~500
-  login_latency_ms          ~50
-  flow_create_latency_ms    ~100
-  flow_run_enqueue_ms       ~50
-  flow_complete_latency_ms  ~500
-  total_latency_ms          ~2500
-  verdict                   READY
+  spawn_latency_ms           1530
+  api_ready_latency_ms       686
+  login_latency_ms           707
+  flow_create_latency_ms     904
+  flow_run_enqueue_ms        2450
+  flow_complete_latency_ms   1114
+  total_latency_ms           7391
+  verdict                    READY
 ```
 
-Numbers are illustrative; the first cold-start measurement run on
-2026-05-09 saw `spawn=1351ms`, `api_ready=514ms` for the smoke test
-which uses the same template.
+The numbers above are not target SLOs — they're a single live run
+captured for posterity. `flow_run_enqueue_ms` includes the time
+Windmill spends accepting the request and writing the queue row; on
+this run it was the slowest single step, dwarfing the actual
+execution time of a one-line bash echo.
 
 ## Design notes
 
