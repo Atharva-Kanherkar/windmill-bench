@@ -138,29 +138,52 @@ async function runOneCase(token, flowPath, inputs) {
   return { status: 'timeout', detail: `not completed within ${POLL_TIMEOUT_MS}ms`, jobId }
 }
 
-// Result equality. Numeric coercion is allowed in exactly one
-// direction: when expected is a number and got is a string that
-// is the *canonical* representation of that exact number, treat
-// them as equal. This is necessary because Windmill's bash language
-// returns the last line of stdout as a string, so a correct
-// `echo $((a+b))` returns "5" while expected is 5. Other languages
-// (python, nativets, deno) return native types and don't need this.
+// Result equality. Two extensions over plain ===:
 //
-// "Canonical" means the string round-trips through Number unchanged:
-// String(Number(got)) === got. That single check rejects every
-// non-canonical form Number() would otherwise be lenient about:
+// 1. Numeric coercion in exactly one direction -- when expected is a
+//    number and got is a string that is the *canonical* representation
+//    of that exact number, treat them as equal. This is necessary
+//    because Windmill's bash language returns the last line of stdout
+//    as a string, so a correct `echo $((a+b))` returns "5" while
+//    expected is 5. Other languages (bun, python, deno) return
+//    native types and don't need this.
 //
-//   " 5", "5 ", "5\n", "\t5"   -- whitespace padding
-//   "05", "+5"                  -- non-canonical sign/leading zero
-//   "5e0", "5E0", "0x5", "0b101" -- alternate notations
-//   "5.0", "5."                 -- non-canonical decimal forms
-//   "-0"                        -- String(-0) === "0", so rejected
+//    "Canonical" means the string round-trips through Number unchanged:
+//    String(Number(got)) === got. That single check rejects every
+//    non-canonical form Number() would otherwise be lenient about
+//    (whitespace padding, leading zeros, scientific, "5.0", "-0").
 //
-// Numeric equality must also hold (Number.isNaN guard + ===); the
-// round-trip is a necessary but not sufficient check, since e.g.
-// "1e21" would round-trip but is unlikely to ever match a benchmark
-// expected. Arrays and objects fall through to JSON.stringify
-// structural compare.
+// 2. Structural deep-equality for arrays and objects. Plain
+//    JSON.stringify-compare is key-order-sensitive, so an agent
+//    returning `{total_events:5,unique_users:3}` for an expected
+//    `{unique_users:3,total_events:5}` would fail despite being
+//    semantically identical. We walk the tree and compare keys
+//    sorted. Strict-by-value: NaN !== NaN, no float tolerance.
+function deepEqual(a, b) {
+  if (a === b) return true
+  if (typeof a !== typeof b) return false
+  if (a === null || b === null) return false
+  if (typeof a !== 'object') return false
+  const aIsArr = Array.isArray(a)
+  const bIsArr = Array.isArray(b)
+  if (aIsArr !== bIsArr) return false
+  if (aIsArr) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false
+    }
+    return true
+  }
+  const ka = Object.keys(a)
+  const kb = Object.keys(b)
+  if (ka.length !== kb.length) return false
+  for (const k of ka) {
+    if (!Object.prototype.hasOwnProperty.call(b, k)) return false
+    if (!deepEqual(a[k], b[k])) return false
+  }
+  return true
+}
+
 function resultMatches(got, expected) {
   if (typeof expected === 'number' && typeof got === 'string') {
     const coerced = Number(got)
@@ -172,7 +195,10 @@ function resultMatches(got, expected) {
       return true
     }
   }
-  return JSON.stringify(got) === JSON.stringify(expected)
+  if (typeof got === 'object' && typeof expected === 'object') {
+    return deepEqual(got, expected)
+  }
+  return got === expected
 }
 
 async function main() {
