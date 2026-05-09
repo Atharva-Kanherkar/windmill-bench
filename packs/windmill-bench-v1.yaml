@@ -1,0 +1,177 @@
+###############################################################################
+# Challenge Pack: windmill-bench v1
+#
+# Benchmarks an agent on writing a Windmill flow definition. Each challenge
+# gives the agent a sandbox with a running Windmill instance and asks them to
+# deploy a flow at a known path. The grader runs `wb-verify` -- baked into the
+# windmill-bench-dev E2B template -- which executes the deployed flow against
+# a JSON cases file and reports per-case pass/fail.
+#
+# v1 ships ONE challenge: sum-two-numbers (ported from Windmill's own
+# ai_evals/cases/flow.yaml flow-test0). It exists to prove the loop works
+# end-to-end before any difficulty tiering or larger corpus is wired up.
+#
+# Verifier output contract is JSON with passed/failed/errors counts; the
+# code_execution validator's `fraction_passed` scoring mode reads those
+# counts to compute the dimension score. See
+# e2b-template/verifier/wb-verify.mjs for the contract details.
+###############################################################################
+
+pack:
+  slug: windmill-bench
+  name: Windmill Bench
+  family: workflow
+  description: |
+    Benchmark for AI agents writing Windmill workflow definitions. Each task
+    spawns a sandbox with Windmill v1.699.0 running and asks the agent to
+    deploy a flow at a known path; the grader runs the deployed flow against
+    a fixed set of inputs and grades by output equality.
+
+version:
+  number: 1
+  execution_mode: native
+
+  sandbox:
+    network_access: false
+    sandbox_template_id: windmill-bench-dev
+
+  # The agent gets shell + file tools so it can use the in-sandbox `wmill`
+  # CLI, write OpenFlow JSON, and curl the Windmill HTTP API at
+  # localhost:8000. Network access is disabled because everything the agent
+  # needs is local to the sandbox -- Windmill, the wmill CLI, the seeded
+  # admin credentials. If a future challenge needs the public Windmill Hub
+  # we'll relax this per-challenge, not pack-wide.
+  tool_policy:
+    allow_shell: true
+    allowed_tool_kinds:
+      - file
+
+  evaluation_spec:
+    name: windmill-bench-v1
+    version_number: 1
+    judge_mode: deterministic
+
+    # The agent is asked to write their deployed flow's OpenFlow JSON
+    # to /workspace/flow.json (purely for debugging visibility -- the
+    # grader does NOT run that file; it runs whatever the agent has
+    # actually deployed in Windmill). Capturing it gives the run
+    # inspector something concrete to point at and lets the
+    # code_execution validator below satisfy its target requirement
+    # (the loader rejects code_execution validators whose target does
+    # not reference a file_capture). file_capture is lenient: if the
+    # file is missing, capture records exists=false and the validator
+    # chain still runs.
+    post_execution_checks:
+      - key: flow_json
+        type: file_capture
+        path: /workspace/flow.json
+
+    # One validator: run wb-verify against the agent's deployed flow at
+    # u/admin/submission. wb-verify emits JSON with {passed, failed,
+    # errors, cases[]}; AgentClash's code_execution parser reads
+    # passed/failed/errors and the `fraction_passed` scoring mode turns
+    # that into a [0, 1] score. The target points at flow_json for
+    # evidence linking only -- the test_command does not read it.
+    # timeout_ms covers 5 cases of (enqueue + poll) plus generous slack.
+    validators:
+      - key: cases_pass
+        type: code_execution
+        target: file:flow_json
+        config:
+          test_command: "wb-verify --flow-path u/admin/submission --cases /usr/share/wb/cases/sum-two-numbers.json"
+          scoring: fraction_passed
+          timeout_ms: 60000
+
+    runtime_limits:
+      max_duration_ms: 600000
+      max_total_tokens: 50000
+
+    scorecard:
+      strategy: weighted
+      dimensions:
+        - key: correctness
+          source: validators
+          validators:
+            - cases_pass
+          better_direction: higher
+          weight: 1.0
+      pass_threshold: 1.0
+
+challenges:
+  - key: sum-two-numbers
+    title: Windmill flow that sums two numbers
+    category: workflow
+    difficulty: easy
+    instructions: |
+      Write a Windmill flow that takes two numbers, `a` and `b`, and returns
+      their sum. Deploy it at the path `u/admin/submission` in the `admins`
+      workspace.
+
+      ## Environment
+
+      - Windmill is already running at http://localhost:8000.
+      - Workspace id: `admins`.
+      - Login: `admin@windmill.dev` / `changeme`.
+        Get a bearer token via:
+
+            curl -fsS -X POST http://localhost:8000/api/auth/login \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"admin@windmill.dev","password":"changeme"}'
+
+      - The `wmill` CLI is preinstalled. To use it you need to add a
+        workspace alias first, e.g.:
+
+            wmill workspace add bench admins http://localhost:8000 --token <TOKEN>
+
+      - Use either the HTTP API (POST /api/w/admins/flows/create) or the
+        wmill CLI (wmill flow push) -- the grader doesn't care which.
+
+      ## Flow contract
+
+      - Path: exactly `u/admin/submission`.
+      - Input schema: two numeric properties named exactly `a` and `b`.
+      - When run with `{"a": x, "b": y}` as inputs, the result must equal
+        `x + y` (numerically).
+      - Use any supported language for the script step. **Important:** in
+        this image bash is the only language with a working runtime. Other
+        languages (bun, deno, python3) currently fail with "Executable not
+        found on worker". This is a known limitation of the v1 image.
+
+      ## Bash protocol gotchas (verified against Windmill v1.699.0)
+
+      - `input_transforms` keys map to positional args `$1`, `$2`, ... in
+        the order they appear in the JSON object. They are NOT auto-bound
+        as named bash variables -- `$a` and `$b` will be empty unless you
+        explicitly assign from `$1`/`$2`.
+      - The result is the LAST LINE of stdout, returned as a string. The
+        grader handles canonical-numeric strings: `"5"` compares equal to
+        expected `5`. Padded forms (`" 5"`, `"5\n"`, `"5.0"`, `"05"`) are
+        rejected -- emit canonical integer output.
+      - Recommended bash body:
+
+            a="$1"
+            b="$2"
+            echo $((a + b))
+
+      ## Grading
+
+      The grader runs your deployed flow against five hidden test cases and
+      reports `passed / total`. You don't need to know the inputs -- the
+      flow must work for any pair of integers. Every test case has a
+      non-zero expected output, so a degenerate flow that always returns 0
+      (or always returns one of the inputs) fails all cases.
+
+      ## Optional: write your flow JSON to /workspace/flow.json
+
+      For debugging visibility, also write the OpenFlow JSON of the flow
+      you deployed to `/workspace/flow.json`. The grader captures this
+      file (if present) and surfaces it in the run inspector. It is NOT
+      executed -- only the flow you actually deployed in Windmill is
+      graded. Skipping this file does not affect your score.
+
+input_sets:
+  - key: default
+    name: Default
+    cases:
+      - challenge_key: sum-two-numbers
+        case_key: bash-only-v1
