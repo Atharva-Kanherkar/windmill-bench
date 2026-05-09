@@ -115,23 +115,40 @@ async function runOneCase(token, flowPath, inputs) {
     }
     const j = await r.json()
     if (j.completed) {
-      return {
-        status: j.success === true ? 'completed' : 'runtime_error',
-        result: j.result,
-        success: j.success === true,
-        jobId,
+      if (j.success === true) {
+        return { status: 'completed', result: j.result, success: true, jobId }
       }
+      // Windmill returns the failure shape inside `result` (for terminal job
+      // failures the result is a {error: {name, message, ...}} object). Surface
+      // the message so debugging a failed agent flow doesn't require a second
+      // round-trip to /jobs_u/completed/get/{id}.
+      const errMsg =
+        j.result && typeof j.result === 'object' && j.result.error
+          ? `${j.result.error.name ?? 'error'}: ${j.result.error.message ?? JSON.stringify(j.result.error)}`
+          : `success=false, result=${JSON.stringify(j.result)}`
+      return { status: 'runtime_error', detail: errMsg, jobId, result: j.result }
     }
     await new Promise((res) => setTimeout(res, POLL_INTERVAL_MS))
   }
   return { status: 'timeout', detail: `not completed within ${POLL_TIMEOUT_MS}ms`, jobId }
 }
 
-// Strict equality for the result. We deliberately do NOT coerce
-// "5" (string) to 5 (number). The pack instructions tell the agent
-// the expected return type, and grading honestly is more useful than
-// being friendly. JSON.stringify-compare handles arrays/objects.
-function strictEqual(got, expected) {
+// Result equality. Numeric coercion is allowed in exactly one
+// direction: when expected is a number and got is a string that
+// parses as that exact number, treat them as equal. This is
+// necessary because Windmill's bash language returns the last line
+// of stdout *as a string*, so a correct `echo $((a+b))` returns
+// "5" while expected is 5. Other languages (python, nativets, deno)
+// return native types and don't need this. We coerce only this one
+// pair (number expected / string got) and only when Number(got)
+// is exactly equal -- no float tolerance, no whitespace tricks.
+// Arrays and objects are compared via JSON.stringify so structural
+// equality works without type-by-type traversal.
+function resultMatches(got, expected) {
+  if (typeof expected === 'number' && typeof got === 'string') {
+    const coerced = Number(got)
+    if (!Number.isNaN(coerced) && coerced === expected) return true
+  }
   return JSON.stringify(got) === JSON.stringify(expected)
 }
 
@@ -176,7 +193,7 @@ async function main() {
         details.push({ name, status: res.status, detail: res.detail ?? null, jobId: res.jobId ?? null })
         continue
       }
-      if (strictEqual(res.result, c.expected)) {
+      if (resultMatches(res.result, c.expected)) {
         passed++
         details.push({ name, status: 'ok', got: res.result, jobId: res.jobId })
       } else {
