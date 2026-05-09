@@ -75,6 +75,7 @@ interface Timings {
   spawn_latency_ms?: number
   api_ready_latency_ms?: number
   login_latency_ms?: number
+  wmill_cli_latency_ms?: number
   total_latency_ms?: number
 }
 
@@ -120,7 +121,55 @@ async function main() {
     }
     console.log('  login token:            ', `${token.substring(0, 12)}...`)
 
-    timings.total_latency_ms = tLogin - t0
+    // 3. wmill CLI: register a local workspace alias against the running
+    //    Windmill, then list to confirm it took. This proves the CLI tool
+    //    PR 8 will use for flow push/run is actually functional in the
+    //    booted sandbox — not just the HTTP API.
+    //
+    //    Per research, the form is `wmill workspace add <name> <ws> <url> <token>`
+    //    where `<name>` is a local alias and `<ws>` is the existing
+    //    server-side workspace id (the seeded `admins` workspace). If
+    //    flag order has changed, the failure capture below ALSO prints
+    //    `wmill workspace add --help` so the maintainer sees the right
+    //    form rather than a bare exit code.
+    const wmillAddCmd =
+      `wmill workspace add bench admins http://localhost:8000 ${token}`
+    const wmillAddResult = await step(sandbox, 'wmill_workspace_add', wmillAddCmd)
+    if (!wmillAddResult.ok) {
+      const helpResult = await sandbox.commands.run(
+        'wmill workspace add --help 2>&1 || true',
+      )
+      return reportFailure(
+        {
+          step: 'wmill_workspace_add',
+          exitCode: wmillAddResult.failure.exitCode,
+          stdout: wmillAddResult.failure.stdout,
+          stderr:
+            `${wmillAddResult.failure.stderr}\n\n` +
+            `--- wmill workspace add --help ---\n${helpResult.stdout}`,
+        },
+        timings,
+      )
+    }
+
+    const wmillListResult = await step(sandbox, 'wmill_workspace_list', 'wmill workspace list')
+    const tWmill = Date.now()
+    timings.wmill_cli_latency_ms = tWmill - tLogin
+    if (!wmillListResult.ok) return reportFailure(wmillListResult.failure, timings)
+    if (!wmillListResult.stdout.includes('bench')) {
+      return reportFailure(
+        {
+          step: 'wmill_workspace_list',
+          exitCode: 0,
+          stdout: wmillListResult.stdout,
+          stderr: "(workspace alias 'bench' not in list output — wmill add may have silently no-op'd)",
+        },
+        timings,
+      )
+    }
+    console.log('  wmill workspaces:       ', wmillListResult.stdout.trim().split('\n').length, 'entries')
+
+    timings.total_latency_ms = tWmill - t0
     reportSuccess(timings)
   } finally {
     await sandbox.kill()
