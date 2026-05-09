@@ -21,24 +21,34 @@ interface StepFailure {
   stderr: string
 }
 
+// The e2b SDK's `commands.run()` throws CommandExitError on any non-zero
+// exit (it internally calls CommandHandle.wait()). This shape (try/catch
+// → result/failure object) lets us treat both throw paths and zero-exit
+// paths uniformly downstream.
+function failureFromError(name: string, err: unknown): StepFailure {
+  // CommandExitError carries exitCode/stdout/stderr; surface them when
+  // present. Any other error type (network, sandbox dropped) falls back
+  // to a stringified message.
+  const e = err as Partial<{ exitCode: number; stdout: string; stderr: string }>
+  return {
+    step: name,
+    exitCode: typeof e.exitCode === 'number' ? e.exitCode : -1,
+    stdout: typeof e.stdout === 'string' ? e.stdout : '',
+    stderr: typeof e.stderr === 'string' ? e.stderr : String(err),
+  }
+}
+
 async function step(
   sandbox: Sandbox,
   name: string,
   cmd: string,
 ): Promise<{ ok: true; stdout: string } | { ok: false; failure: StepFailure }> {
-  const result = await sandbox.commands.run(cmd)
-  if (result.exitCode !== 0) {
-    return {
-      ok: false,
-      failure: {
-        step: name,
-        exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      },
-    }
+  try {
+    const result = await sandbox.commands.run(cmd)
+    return { ok: true, stdout: result.stdout }
+  } catch (err) {
+    return { ok: false, failure: failureFromError(name, err) }
   }
-  return { ok: true, stdout: result.stdout }
 }
 
 // Snapshot restore returns Windmill from a "running" state, but the network
@@ -46,17 +56,29 @@ async function step(
 // Poll /api/version until it answers or we hit the timeout. Returns
 // successfully on the first 200; the time-to-success is the api_ready
 // latency.
+//
+// IMPORTANT: the curl invocation deliberately does NOT include `|| true`
+// or `2>&1`. We need curl's true exit code to flow through:
+//   - 0 means HTTP 2xx; we got a real response — succeed.
+//   - non-zero means connection refused / HTTP 4xx-5xx (because of -f);
+//     the SDK throws CommandExitError, we catch it, wait, retry.
+// A previous version used `curl -fsS ${url} 2>&1 || true` and checked
+// "exitCode 0 + non-empty stdout" — that false-passes on connection
+// failures because curl's error text gets redirected into stdout and the
+// shell always exits 0.
 async function pollApiReady(
   sandbox: Sandbox,
   url: string,
 ): Promise<{ ok: true; stdout: string } | { ok: false; failure: StepFailure }> {
   const startedAt = Date.now()
-  let lastResult: { exitCode: number; stdout: string; stderr: string } | null = null
+  let lastFailure: StepFailure | null = null
   while (Date.now() - startedAt < API_READY_TIMEOUT_MS) {
-    const r = await sandbox.commands.run(`curl -fsS ${url} 2>&1 || true`)
-    lastResult = r
-    if (r.exitCode === 0 && r.stdout.trim().length > 0) {
+    try {
+      const r = await sandbox.commands.run(`curl -fsS ${url}`)
+      // curl -f exits 0 only on 2xx; we have a real response.
       return { ok: true, stdout: r.stdout }
+    } catch (err) {
+      lastFailure = failureFromError('api_version', err)
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
@@ -64,9 +86,11 @@ async function pollApiReady(
     ok: false,
     failure: {
       step: 'api_version',
-      exitCode: lastResult?.exitCode ?? -1,
-      stdout: lastResult?.stdout ?? '',
-      stderr: `polling /api/version timed out after ${API_READY_TIMEOUT_MS}ms`,
+      exitCode: lastFailure?.exitCode ?? -1,
+      stdout: lastFailure?.stdout ?? '',
+      stderr:
+        `polling /api/version timed out after ${API_READY_TIMEOUT_MS}ms` +
+        (lastFailure?.stderr ? `\nlast curl error: ${lastFailure.stderr}` : ''),
     },
   }
 }
