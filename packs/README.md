@@ -31,7 +31,9 @@ agentclash workspace use <workspace-id>
 agentclash challenge-pack validate packs/windmill-bench-v1.yaml
 ```
 
-The offline path (no API server, no credentials):
+The offline path (no API server, no credentials). AgentClash's Go module
+is rooted at `backend/`, so the test command must run from there, not
+from the repo root:
 
 ```bash
 # In a checkout of agentclash:
@@ -45,7 +47,9 @@ func TestParseLocal(t *testing.T) {
   if _, err := ParseYAML(data); err != nil { t.Fatal(err) }
 }
 EOF
-go test ./internal/challengepack/ -run TestParseLocal -v
+cd backend
+go test ./internal/challengepack -run TestParseLocal -v
+cd ..
 rm backend/internal/challengepack/wb_local_test.go
 ```
 
