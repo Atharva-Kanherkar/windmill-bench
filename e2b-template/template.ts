@@ -11,6 +11,21 @@ const WMILL_NPM_VERSION = '1.699.0' // wmill-cli on npm uses no leading 'v'
 const WMILL_BINARY_URL = `https://github.com/windmill-labs/windmill/releases/download/${WMILL_VERSION}/windmill-amd64`
 const WMILL_BINARY_SHA256 = '8f89894f171879fad6a2e5d40fee0e3487a3f111c0020d8747735d6cf14b03e9'
 
+// Language runtimes for user-script execution inside Windmill flows.
+// Versions PINNED to what windmill v1.699.0's official Dockerfile installs
+// (verified against
+// https://raw.githubusercontent.com/windmill-labs/windmill/v1.699.0/Dockerfile).
+// Windmill's worker calls these at hardcoded paths -- /usr/bin/bun and
+// /usr/bin/deno are the literal lookups; uv is PATH-resolved. Mismatches
+// produce confusing "Executable not found on worker" runtime errors that
+// only surface when a real flow runs, so we pin + verify version + SHA at
+// build time.
+const BUN_VERSION = '1.3.10'
+const BUN_SHA256 = 'f57bc0187e39623de716ba3a389fda5486b2d7be7131a980ba54dc7b733d2e08'
+const DENO_VERSION = '2.2.1'
+const DENO_SHA256 = '2de60cc65349bb4f97636de26b32b1ff71e79a0e127f2e6b7397b1d89aa76ea4'
+const UV_VERSION = '0.9.24'
+
 // Base template for windmill-bench sandboxes.
 //
 // Architecture: Windmill runs as a *binary* alongside a local Postgres inside
@@ -114,6 +129,54 @@ export const template = Template()
   .runCmd(
     'printf \'#!/bin/sh\\nexec node /usr/local/lib/wb-verify.mjs "$@"\\n\' > /usr/local/bin/wb-verify ' +
       '&& chmod 0755 /usr/local/bin/wb-verify',
+  )
+
+  // Language runtimes for Windmill user scripts. Each is pinned to the
+  // exact version Windmill v1.699.0's official Dockerfile installs and
+  // SHA256-verified at build time so a republished upstream zip fails
+  // the build instead of silently swapping the binary. Paths match what
+  // Windmill's worker looks up at runtime.
+
+  // unzip — required to extract the bun + deno release zips. Installed as
+  // its own layer so adding it does not invalidate the larger apt block
+  // upstream.
+  .runCmd(
+    'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends unzip ' +
+      '&& rm -rf /var/lib/apt/lists/*',
+  )
+
+  // bun 1.3.10 → /usr/bin/bun (Windmill expects exactly this absolute
+  // path). Empirically: without this, bun-language flows fail with
+  // "Executable /usr/bin/bun not found on worker" -- the agent never
+  // sees a useful error, just a runtime_error in the verifier.
+  .runCmd(
+    `curl -fsSL https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip -o /tmp/bun.zip ` +
+      `&& echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - ` +
+      `&& unzip -q -j /tmp/bun.zip -d /tmp ` +
+      `&& install -m 0755 /tmp/bun /usr/bin/bun ` +
+      `&& rm -f /tmp/bun.zip /tmp/bun ` +
+      `&& bun --version | grep -q "^${BUN_VERSION}$"`,
+  )
+
+  // deno 2.2.1 → /usr/bin/deno (same hardcoded-path story as bun).
+  .runCmd(
+    `curl -fsSL https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip ` +
+      `&& echo "${DENO_SHA256}  /tmp/deno.zip" | sha256sum -c - ` +
+      `&& unzip -q -j /tmp/deno.zip -d /tmp ` +
+      `&& install -m 0755 /tmp/deno /usr/bin/deno ` +
+      `&& rm -f /tmp/deno.zip /tmp/deno ` +
+      `&& deno --version | grep -q "^deno ${DENO_VERSION}"`,
+  )
+
+  // uv 0.9.24 → /usr/local/bin/uv. Windmill's python3 flows shell out to
+  // uv for dependency resolution; without uv they error with
+  // "Executable uv not found on worker". The official installer
+  // verifies its own SHA before extracting, so we trust that and just
+  // pin the version + final landing path.
+  .runCmd(
+    `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-installer.sh | sh ` +
+      `&& mv /root/.local/bin/uv /usr/local/bin/uv ` +
+      `&& uv --version | grep -q "^uv ${UV_VERSION}"`,
   )
 
   // Workspace is where benchmark runs do their work — mirrors the convention
