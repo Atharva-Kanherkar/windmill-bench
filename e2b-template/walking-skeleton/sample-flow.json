@@ -1,0 +1,23 @@
+{
+  "path": "u/admin/walking_skeleton",
+  "summary": "walking-skeleton: 1-step bash echo",
+  "description": "Smallest possible Windmill flow used to validate the push -> run -> poll -> result loop end-to-end. One bash step that echoes a known constant; the runner asserts result === 'hello-from-windmill'. Not part of the benchmark corpus -- this is plumbing for PR 9.",
+  "value": {
+    "modules": [
+      {
+        "id": "echo",
+        "value": {
+          "type": "rawscript",
+          "language": "bash",
+          "content": "echo 'hello-from-windmill'\n",
+          "input_transforms": {}
+        }
+      }
+    ]
+  },
+  "schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
