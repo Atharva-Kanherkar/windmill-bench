@@ -8,7 +8,8 @@
     "shellcheck": "shellcheck boot.sh",
     "probe:snapshot:build": "tsx probes/snapshot-state/build.ts",
     "probe:snapshot:run": "tsx probes/snapshot-state/run.ts",
-    "smoke:run": "tsx smoke-test/run.ts"
+    "smoke:run": "tsx smoke-test/run.ts",
+    "walking-skeleton:run": "tsx walking-skeleton/run.ts"
   },
   "dependencies": {
     "e2b": "^2.14.1",
