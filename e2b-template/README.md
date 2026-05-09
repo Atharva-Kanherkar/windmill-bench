@@ -66,7 +66,9 @@ verdict `FS_AND_PROCESS_PERSISTED` observed 2026-05-09 against E2B SDK
   `pgrep -fa "sleep infinity"`.
 
 So when sandboxes spawn, Postgres is already running and Windmill is
-already serving on the migrated DB. **Cold-start ~3 seconds.**
+already serving on the migrated DB. **Cold-start ~1.9 seconds**
+(measured 2026-05-09: `spawn_latency=1351ms + api_ready_latency=514ms`
+via `npm run smoke:run`; better than the original ~3s estimate).
 
 What the script does, in order:
 
