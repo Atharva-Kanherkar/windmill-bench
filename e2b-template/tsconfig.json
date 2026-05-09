@@ -17,6 +17,7 @@
     "probes/**/*.ts",
     "smoke-test/**/*.ts",
     "walking-skeleton/**/*.ts",
-    "walking-skeleton/**/*.json"
+    "walking-skeleton/**/*.json",
+    "verifier/**/*.ts"
   ]
 }
