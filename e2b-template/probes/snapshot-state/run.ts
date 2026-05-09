@@ -30,11 +30,26 @@ async function readProbeFile(sandbox: Sandbox, path: string): Promise<string | n
 }
 
 async function checkSleepProcessAlive(sandbox: Sandbox): Promise<boolean> {
-  // pgrep -fa matches against the full command line, so we find the specific
-  // `sleep infinity` invocation from the probe template's start command and
-  // not, say, an unrelated short-lived sleep. Exit 0 means at least one match.
-  const result = await sandbox.commands.run('pgrep -fa "sleep infinity" || true')
-  return result.stdout.includes('sleep infinity')
+  // The classic [s]leep regex trick. We need a `pgrep -f` pattern that:
+  //   (a) matches a real `sleep infinity` process — cmdline `sleep infinity`
+  //   (b) does NOT match the shell that invoked pgrep — its cmdline
+  //       literally contains the bracketed pattern text we wrote here.
+  //
+  // The regex `[s]leep infinity` is interpreted by pgrep as: a single
+  // character from the set {'s'}, followed by `leep infinity`. So:
+  //   - real `sleep infinity` cmdline: matches (s,l,e,e,p, ,i,...)
+  //   - invoking shell cmdline contains the LITERAL text `[s]leep infinity`,
+  //     which does not match — after the `s` the next char is `]`, not `l`.
+  //
+  // Without this trick, pgrep will always self-match because the command
+  // we're running through sandbox.commands.run is interpreted by a shell
+  // whose argv ends up containing "sleep infinity" verbatim — false-positive
+  // every time.
+  const result = await sandbox.commands.run('pgrep -fa "[s]leep infinity" || true')
+  // Check for an actual command-line entry, not just any text containing
+  // "sleep infinity": pgrep -a output is `<pid> <cmdline>`, so a real match
+  // produces a line whose text after the PID is exactly `sleep infinity`.
+  return /^\s*\d+\s+sleep infinity\s*$/m.test(result.stdout)
 }
 
 async function main() {
