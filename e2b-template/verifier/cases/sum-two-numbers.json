@@ -1,0 +1,7 @@
+[
+  { "name": "small-positive",     "inputs": { "a": 2,    "b": 3   }, "expected": 5    },
+  { "name": "asymmetric-positive","inputs": { "a": 100,  "b": 23  }, "expected": 123  },
+  { "name": "mixed-signs",        "inputs": { "a": -5,   "b": 10  }, "expected": 5    },
+  { "name": "both-negative",      "inputs": { "a": -7,   "b": -8  }, "expected": -15  },
+  { "name": "asymmetric-large",   "inputs": { "a": 1000, "b": -7  }, "expected": 993  }
+]

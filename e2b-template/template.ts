@@ -90,6 +90,32 @@ export const template = Template()
       `&& file /usr/local/bin/windmill | grep -q "ELF 64-bit"`,
   )
 
+  // wb-verify: bench-side verifier baked into the image so challenge packs
+  // can run an agent-deployed Windmill flow against a JSON cases file and
+  // get a single-line JSON summary back. Plain-Node ESM (no deps), so we
+  // ship the source as-is and wrap it in a shell shim at
+  // /usr/local/bin/wb-verify. Cases live under /usr/share/wb/cases/ so
+  // pack YAML can reference them by absolute path. See verifier/wb-verify.mjs
+  // for the output contract — it's chosen to satisfy AgentClash's
+  // code_execution validator parser (JSON path, not exit-code path).
+  .copy('verifier/wb-verify.mjs', '/usr/local/lib/wb-verify.mjs', {
+    user: 'root',
+    mode: 0o644,
+  })
+  .runCmd('mkdir -p /usr/share/wb/cases')
+  .copy('verifier/cases/sum-two-numbers.json', '/usr/share/wb/cases/sum-two-numbers.json', {
+    user: 'root',
+    mode: 0o644,
+  })
+  // Shim shell-script keeps the pack YAML concise (`wb-verify ...` rather
+  // than `node /usr/local/lib/wb-verify.mjs ...`). printf preserves the
+  // exact bytes; using echo here would be brittle across /bin/sh
+  // implementations.
+  .runCmd(
+    'printf \'#!/bin/sh\\nexec node /usr/local/lib/wb-verify.mjs "$@"\\n\' > /usr/local/bin/wb-verify ' +
+      '&& chmod 0755 /usr/local/bin/wb-verify',
+  )
+
   // Workspace is where benchmark runs do their work — mirrors the convention
   // AgentClash already uses inside its sandboxes. Subsequent PRs copy the
   // hub snapshot and workspace seed into here.
