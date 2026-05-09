@@ -55,22 +55,18 @@ The two key Windmill env-var defaults we rely on:
 ## Boot sequence
 
 `boot.sh` runs **once at template-build time** (not at sandbox spawn) via
-`setStartCmd`. The premise — Postgres + Windmill stay running across the
-snapshot, so spawned sandboxes restore with Windmill already serving on
-the migrated DB at ~3s cold-start — has two parts, verified separately by
-the snapshot-state probe (`probes/snapshot-state/`):
+`setStartCmd`. The snapshot-state probe (`probes/snapshot-state/`,
+verdict `FS_AND_PROCESS_PERSISTED` observed 2026-05-09 against E2B SDK
+2.14.x) verified both halves of the premise:
 
-- **Filesystem state** persists: ✅ verified 2026-05-09 (PR #5 verdict).
-  The migrated `/var/lib/postgresql` survives into spawned sandboxes.
-- **Process state** persists: ⏳ predicated on E2B docs ("the start
-  command... is captured in a snapshot"); the probe's process-tree
-  check was added after PR review and is pending an empirical re-run.
-  The probe README scoring matrix tracks both axes.
+- **Filesystem state** persists: ✅ the migrated `/var/lib/postgresql`
+  survives into spawned sandboxes.
+- **Process state** persists: ✅ the start-command process tree (and its
+  children) is alive in spawned sandboxes; verified via
+  `pgrep -fa "sleep infinity"`.
 
-If the process-axis re-run reports `FS_ONLY` instead of
-`FS_AND_PROCESS_PERSISTED`, this `setStartCmd` wiring is wrong and
-boot.sh needs to be invoked at sandbox-spawn time by the harness rather
-than at template-build time. Boot script logic itself stays unchanged.
+So when sandboxes spawn, Postgres is already running and Windmill is
+already serving on the migrated DB. **Cold-start ~3 seconds.**
 
 What the script does, in order:
 

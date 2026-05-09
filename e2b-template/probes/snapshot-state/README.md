@@ -58,23 +58,31 @@ to check whether the start-phase process tree survived.
 
 ## Result
 
-**Filesystem axes verified** 2026-05-09 against E2B SDK 2.14.x:
+**Verdict:** `FS_AND_PROCESS_PERSISTED` — observed 2026-05-09 against
+E2B SDK 2.14.x. All three axes pass:
 
 ```
-build-time write present: ✓  2026-05-08T20:52:53Z   (.runCmd phase)
-start-time write present: ✓  2026-05-08T20:53:04Z   (setStartCmd phase, before ready marker)
+build-time write present:     ✓  2026-05-08T20:52:53Z   (.runCmd phase)
+start-time write present:     ✓  2026-05-08T20:53:04Z   (setStartCmd phase, before ready marker)
+start-cmd process alive:      ✓  (sleep infinity still running in spawned sandbox)
 ```
 
-**Process axis pending re-run.** The original probe runner only checked
-filesystem state; it was extended in commit `7d8190b` to also verify the
-start-phase process tree via `pgrep -fa "sleep infinity"`. The probe
-needs to be re-run on E2B with the extended runner to record a final
-verdict (`FS_AND_PROCESS_PERSISTED` vs `FS_ONLY`).
+The filesystem-axis result was first observed during the 2026-05-09 run
+that recorded the original `START_PERSISTED` verdict (PR #5). The
+process-axis check was added afterward (commit `7d8190b`) in response to
+PR #6 review feedback that the original probe didn't directly verify
+process survival; the re-run on the extended runner confirms it.
 
-PR 6 ships `boot.sh` predicated on `FS_AND_PROCESS_PERSISTED` — the
-strongest verdict. If the re-run reports `FS_ONLY` instead, PR 6's
-setStartCmd wiring needs to change so boot.sh runs at sandbox spawn
-rather than at template build.
+Implication: the snapshot captures both filesystem and process state.
+The main `e2b-template/template.ts` can run Windmill at template-build
+time, leave the windmill + postgres processes running, and snapshot the
+populated `/var/lib/postgresql` along with the live processes. Sandboxes
+spawned from that template restore with Windmill already serving →
+cold-start ~3s.
+
+If E2B's snapshot semantics ever change in the future, re-run the probe
+and update this section before trusting either trick (filesystem
+preservation OR process preservation).
 
 ## Re-running
 
