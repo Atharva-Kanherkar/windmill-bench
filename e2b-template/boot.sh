@@ -34,11 +34,26 @@ if [ ! -f "$PG_DATA/PG_VERSION" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Start the cluster (no-op if already running). Use pg_ctlcluster, not
-#    `service postgresql start` — systemd is not present in the sandbox.
+# 2. Start the cluster.
+#
+#    --skip-systemctl-redirect is REQUIRED here. Debian/Ubuntu's
+#    pg_ctlcluster wrapper auto-redirects to `systemctl start
+#    postgresql@16-main` whenever systemd is *installed* on the system —
+#    not whenever systemd is actually running as PID 1. The E2B build VM
+#    has systemd installed (it's a stock ubuntu:24.04 layer) but no
+#    systemd init, so the redirect tries to talk to a phantom systemd
+#    and pg_ctlcluster exits non-zero.
+#
+#    The flag tells pg_ctlcluster to call `pg_ctl` directly without the
+#    systemd detour. This is the Debian-blessed path for containers and
+#    is documented in pg_ctlcluster(8). DO NOT remove this flag — the
+#    failure mode is non-obvious ("Job for postgresql@16-main.service
+#    failed because the service did not take the steps required by its
+#    unit configuration"), so a future reader who removes it for
+#    aesthetics gets to debug the same bug we already debugged.
 # ---------------------------------------------------------------------------
 step 'starting postgresql-16 cluster'
-pg_ctlcluster 16 main start
+pg_ctlcluster 16 main start --skip-systemctl-redirect
 
 # ---------------------------------------------------------------------------
 # 3. Wait for Postgres to accept connections. Bounded poll (~15s max) so a
