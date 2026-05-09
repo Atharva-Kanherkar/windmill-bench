@@ -150,14 +150,16 @@ async function main() {
     //    PR 8 will use for flow push/run is actually functional in the
     //    booted sandbox — not just the HTTP API.
     //
-    //    Per research, the form is `wmill workspace add <name> <ws> <url> <token>`
-    //    where `<name>` is a local alias and `<ws>` is the existing
-    //    server-side workspace id (the seeded `admins` workspace). If
-    //    flag order has changed, the failure capture below ALSO prints
-    //    `wmill workspace add --help` so the maintainer sees the right
-    //    form rather than a bare exit code.
+    //    Form (verified empirically against windmill-cli@1.699.0):
+    //
+    //      wmill workspace add <name> <ws_id> <remote_url> --token <token>
+    //
+    //    First three are positional ([workspace_name] [workspace_id] [remote]
+    //    per `--help`). Token is a flag, NOT a 4th positional — the earlier
+    //    research-derived form passed token as positional and got rejected
+    //    with the help banner.
     const wmillAddCmd =
-      `wmill workspace add bench admins http://localhost:8000 ${token}`
+      `wmill workspace add bench admins http://localhost:8000 --token ${token}`
     const wmillAddResult = await step(sandbox, 'wmill_workspace_add', wmillAddCmd)
     if (!wmillAddResult.ok) {
       const helpResult = await sandbox.commands.run(
