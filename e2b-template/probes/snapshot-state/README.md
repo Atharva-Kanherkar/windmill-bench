@@ -64,14 +64,28 @@ E2B SDK 2.14.x. All three axes pass:
 ```
 build-time write present:     ✓  2026-05-08T20:52:53Z   (.runCmd phase)
 start-time write present:     ✓  2026-05-08T20:53:04Z   (setStartCmd phase, before ready marker)
-start-cmd process alive:      ✓  (sleep infinity still running in spawned sandbox)
+start-cmd process alive:      ✓  via pgrep -fa "[s]leep infinity"
 ```
+
+The process-axis check uses the `[s]leep` regex trick deliberately. A
+naive `pgrep -fa "sleep infinity"` would always self-match because the
+shell that invokes pgrep ends up with the literal text `sleep infinity`
+in its own command line — pgrep -f scans /proc and matches it. The
+bracketed regex matches a real `sleep infinity` process (the regex
+character class `[s]` accepts `s`, then `leep infinity` follows), but
+does NOT match the invoking shell whose cmdline contains the literal
+characters `[`, `s`, `]`, `l`, `e`, `e`, `p`, ` `, ... — the `]` after
+`s` breaks the match.
+
+The runner additionally asserts that the matched line has the exact
+shape `<pid> sleep infinity`, not just `stdout contains the bytes`, to
+guard against any other text that might happen to embed the substring.
 
 The filesystem-axis result was first observed during the 2026-05-09 run
 that recorded the original `START_PERSISTED` verdict (PR #5). The
-process-axis check was added afterward (commit `7d8190b`) in response to
-PR #6 review feedback that the original probe didn't directly verify
-process survival; the re-run on the extended runner confirms it.
+process-axis check was added in commit `7d8190b` (the original version
+had a self-match bug, fixed in commit `1431bdd`); the re-run on the
+corrected runner confirms the process tree genuinely survives.
 
 Implication: the snapshot captures both filesystem and process state.
 The main `e2b-template/template.ts` can run Windmill at template-build
