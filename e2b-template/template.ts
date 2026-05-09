@@ -25,6 +25,7 @@ const BUN_SHA256 = 'f57bc0187e39623de716ba3a389fda5486b2d7be7131a980ba54dc7b733d
 const DENO_VERSION = '2.2.1'
 const DENO_SHA256 = '2de60cc65349bb4f97636de26b32b1ff71e79a0e127f2e6b7397b1d89aa76ea4'
 const UV_VERSION = '0.9.24'
+const UV_SHA256 = 'fb13ad85106da6b21dd16613afca910994446fe94a78ee0b5bed9c75cd066078'
 
 // Base template for windmill-bench sandboxes.
 //
@@ -168,14 +169,24 @@ export const template = Template()
       `&& deno --version | grep -q "^deno ${DENO_VERSION}"`,
   )
 
-  // uv 0.9.24 → /usr/local/bin/uv. Windmill's python3 flows shell out to
-  // uv for dependency resolution; without uv they error with
-  // "Executable uv not found on worker". The official installer
-  // verifies its own SHA before extracting, so we trust that and just
-  // pin the version + final landing path.
+  // uv 0.9.24 → /usr/local/bin/uv. Windmill's python3 flows shell out
+  // to uv for dependency resolution; without uv they error with
+  // "Executable uv not found on worker".
+  //
+  // We download the release tarball directly and verify its SHA256
+  // against astral-sh/uv's upstream-published .sha256 file. The
+  // upstream installer script (uv-installer.sh) has a checksum
+  // mechanism but ships v0.9.24 with NO embedded checksum value, so
+  // running it falls through a "no checksums to verify" branch -- it
+  // is not actually integrity-checked. Direct download + SHA verify
+  // matches the discipline used for bun, deno, and the windmill
+  // server binary in this template.
   .runCmd(
-    `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-installer.sh | sh ` +
-      `&& mv /root/.local/bin/uv /usr/local/bin/uv ` +
+    `curl -fsSL https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz -o /tmp/uv.tar.gz ` +
+      `&& echo "${UV_SHA256}  /tmp/uv.tar.gz" | sha256sum -c - ` +
+      `&& tar -xzf /tmp/uv.tar.gz -C /tmp uv-x86_64-unknown-linux-gnu/uv ` +
+      `&& install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv ` +
+      `&& rm -rf /tmp/uv.tar.gz /tmp/uv-x86_64-unknown-linux-gnu ` +
       `&& uv --version | grep -q "^uv ${UV_VERSION}"`,
   )
 
