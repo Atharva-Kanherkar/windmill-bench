@@ -1,0 +1,116 @@
+###############################################################################
+# Challenge Pack: windmill-bench H1 -- count-user-events
+#
+# First "real" task in the windmill-bench corpus. Beyond the v1 sum-two-numbers
+# warmup. Tests three things in one pass:
+#
+#   1. Variable-length array input (Windmill flow takes events: [...])
+#   2. Distinct-counting (most common LLM bug: returning total_events for
+#      both fields)
+#   3. Structured object output with three numeric keys
+#
+# The test_command runs wb-verify against /usr/share/wb/cases/h1-count-user-events.json
+# (5 hidden cases including empty array, negative values, all-same-user
+# degeneracies). Cases are designed so a wrong-on-distinct-counting flow
+# fails at least 3 of 5.
+#
+# Prompt is deliberately terse -- contract-only, no babysitting. Compare
+# Windmill's own ai_evals/cases/flow.yaml prompts which are similarly sparse.
+# The goal is testing what the model knows about Windmill, not whether it
+# can copy a recipe out of the prompt.
+###############################################################################
+
+pack:
+  slug: windmill-bench-h1-count-user-events
+  name: Windmill Bench H1 - Count User Events
+  family: workflow
+  description: |
+    Hard task #1 in the windmill-bench corpus. Agent must build a Windmill
+    flow that aggregates an analytics-event array into three values
+    (distinct users, total events, sum of values). Tests array input
+    handling, distinct-counting, and structured object output -- all in
+    one flow execution per case.
+
+version:
+  number: 1
+  execution_mode: native
+
+  sandbox:
+    network_access: false
+    sandbox_template_id: windmill-bench-dev
+
+  tool_policy:
+    allow_shell: true
+    allowed_tool_kinds:
+      - file
+
+  evaluation_spec:
+    name: windmill-bench-h1-count-user-events-v1
+    version_number: 1
+    judge_mode: deterministic
+
+    post_execution_checks:
+      - key: flow_json
+        type: file_capture
+        path: /workspace/flow.json
+
+    validators:
+      - key: cases_pass
+        type: code_execution
+        target: file:flow_json
+        config:
+          test_command: "wb-verify --flow-path u/admin/submission --cases /usr/share/wb/cases/h1-count-user-events.json"
+          scoring: fraction_passed
+          timeout_ms: 60000
+
+    runtime_limits:
+      max_duration_ms: 600000
+      max_total_tokens: 50000
+
+    scorecard:
+      strategy: weighted
+      dimensions:
+        - key: correctness
+          source: validators
+          validators:
+            - cases_pass
+          better_direction: higher
+          weight: 1.0
+      pass_threshold: 1.0
+
+challenges:
+  - key: count-user-events
+    title: Aggregate user-event analytics in a Windmill flow
+    category: workflow
+    difficulty: medium
+    instructions: |
+      Deploy a Windmill flow at path `u/admin/submission` in the `admins`
+      workspace.
+
+      **Input:** `{ events: [{user_id: string, value: number}, ...] }`
+
+      **Output:** `{ unique_users: int, total_events: int, total_value: number }`
+
+      Where:
+      - `unique_users` = number of distinct `user_id` values across the events.
+      - `total_events` = total number of events (i.e. `events.length`).
+      - `total_value` = sum of `value` across all events. Negative values
+        are real refunds and must be included as-is.
+
+      Edge cases the grader exercises:
+      - Empty events array → all three outputs are `0`.
+      - All events from the same user.
+      - Events whose values include negative numbers.
+
+      Windmill is at `http://localhost:8000`. Login: `admin@windmill.dev` /
+      `changeme`. Workspace id: `admins`.
+
+      The grader runs your deployed flow against five hidden test cases
+      and reports pass-rate as `passed/total`.
+
+input_sets:
+  - key: default
+    name: Default
+    cases:
+      - challenge_key: count-user-events
+        case_key: hidden-five

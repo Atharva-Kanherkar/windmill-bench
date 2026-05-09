@@ -123,6 +123,10 @@ export const template = Template()
     user: 'root',
     mode: 0o644,
   })
+  .copy('verifier/cases/h1-count-user-events.json', '/usr/share/wb/cases/h1-count-user-events.json', {
+    user: 'root',
+    mode: 0o644,
+  })
   // Shim shell-script keeps the pack YAML concise (`wb-verify ...` rather
   // than `node /usr/local/lib/wb-verify.mjs ...`). printf preserves the
   // exact bytes; using echo here would be brittle across /bin/sh
